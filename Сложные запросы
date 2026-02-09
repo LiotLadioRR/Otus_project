@@ -1,0 +1,250 @@
+--1 -Успеваемость студентов по курсам
+/*
+WITH CourseProgress AS (
+    SELECT 
+        e.enrollment_id,
+        u.user_id,
+        u.first_name || ' ' || u.last_name AS student_name,
+        c.course_id,
+        c.title AS course_title,
+        t.first_name || ' ' || t.last_name AS teacher_name,
+        COUNT(DISTINCT l.lesson_id) AS total_lessons,
+        COUNT(DISTINCT lp.lesson_id) FILTER (WHERE lp.status = 'completed') AS completed_lessons,
+        AVG(ta.score) FILTER (WHERE ta.status = 'passed') AS avg_test_score
+    FROM enrollments e
+    JOIN users u ON u.user_id = e.user_id
+    JOIN courses c ON c.course_id = e.course_id
+    JOIN users t ON t.user_id = c.teacher_id
+    LEFT JOIN modules m ON m.course_id = c.course_id
+    LEFT JOIN lessons l ON l.module_id = m.module_id
+    LEFT JOIN lesson_progress lp ON lp.enrollment_id = e.enrollment_id AND lp.lesson_id = l.lesson_id
+    LEFT JOIN tests ts ON ts.lesson_id = l.lesson_id
+    LEFT JOIN test_attempts ta ON ta.enrollment_id = e.enrollment_id AND ta.test_id = ts.test_id
+    WHERE e.status != 'dropped'
+    GROUP BY e.enrollment_id, u.user_id, c.course_id, t.user_id
+)
+SELECT 
+    student_name as "Фамилия и имя студента",
+    course_title as "Название курса",
+    teacher_name as "Фамилия и имя преподавателя",
+    total_lessons as "Общее количество уроков",
+    completed_lessons as "Количество завершенных уроков",
+    CASE 
+        WHEN completed_lessons = total_lessons AND total_lessons > 0 THEN 'Завершен'
+        WHEN completed_lessons > 0 THEN 'В процессе'
+        ELSE 'Не начат'
+    END AS "Прогресс обучения"
+FROM CourseProgress
+
+*/
+* 2 - сложность тестов
+ 
+WITH test_stats AS (
+    SELECT 
+        t.test_id,
+        t.title AS test_title,
+        t.passing_score,
+        t.lesson_id,
+        COUNT(ta.attempt_id) AS attempts_count,
+        AVG(ta.score) AS avg_score,
+        SUM(CASE WHEN ta.status = 'passed' THEN 1 ELSE 0 END) AS passed_count,
+        SUM(CASE WHEN ta.status = 'failed' THEN 1 ELSE 0 END) AS failed_count
+    FROM project.tests t
+    LEFT JOIN project.test_attempts ta ON t.test_id = ta.test_id
+    GROUP BY t.test_id, t.title, t.passing_score, t.lesson_id
+),
+question_count AS (
+    SELECT 
+        test_id,
+        COUNT(*) AS questions_count
+    FROM project.test_questions
+    GROUP BY test_id
+)
+SELECT 
+    ts.test_title AS "Название теста",
+    ts.passing_score AS "Проходной балл",
+    qc.questions_count AS "Количество вопросов в тесте",
+    ts.attempts_count AS "Количество попыток",
+    ts.passed_count AS "Успешных попыток",
+    ts.failed_count AS "Неудачных попыток",
+    -- Рассчитываем процент успеха с проверкой деления на ноль
+    CASE 
+        WHEN ts.attempts_count > 0 
+        THEN ROUND(ts.passed_count::DECIMAL / ts.attempts_count * 100, 1)
+        ELSE 0 
+    END AS "Процент успеха, %",
+    ROUND(COALESCE(ts.avg_score, 0), 1) AS "Средняя оценка",
+  
+    CASE 
+        
+        WHEN ts.passed_count < 3 OR ts.attempts_count = 0 THEN 'Сложный'
+        
+        WHEN (ts.passed_count::DECIMAL / NULLIF(ts.attempts_count, 0) * 100) < 40 THEN 'Сложный'
+        
+        WHEN (ts.passed_count::DECIMAL / NULLIF(ts.attempts_count, 0) * 100) BETWEEN 40 AND 70 THEN 'Средний'
+        
+        ELSE 'Легкий'
+    END AS "Степень сложности теста",
+    
+    CASE 
+        WHEN ts.passing_score >= 85 OR COALESCE(ts.avg_score, 0) < 60 THEN 'Сложный'
+        WHEN ts.passing_score >= 70 OR COALESCE(ts.avg_score, 0) < 75 THEN 'Средний'
+        ELSE 'Легкий'
+    END AS "Сложность по параметрам теста",
+    l.title AS "Урок",
+    m.title AS "Модуль",
+    c.title AS "Курс"
+
+FROM test_stats ts
+
+JOIN project.lessons l ON l.lesson_id = ts.lesson_id
+JOIN project.modules m ON m.module_id = l.module_id
+JOIN project.courses c ON c.course_id = m.course_id
+LEFT JOIN question_count qc ON ts.test_id = qc.test_id
+WHERE c.status = 'published'
+ORDER BY ts.attempts_count DESC, "Процент успеха, %" ASC
+LIMIT 10;
+ **/
+
+/* 3-  Анализ эффективности преподавателей
+ * 
+WITH TeacherStats AS (
+    SELECT 
+        t.user_id AS teacher_id,
+        t.first_name || ' ' || t.last_name AS teacher_name,
+        COUNT(DISTINCT c.course_id) AS total_courses,
+        COUNT(DISTINCT c.course_id) FILTER (WHERE c.status = 'published') AS published_courses,
+        COUNT(DISTINCT e.enrollment_id) AS total_enrollments,
+        COUNT(DISTINCT e.user_id) AS unique_students,
+        COUNT(DISTINCT cert.certificate_id) AS certificates_issued
+    FROM users t
+    LEFT JOIN courses c ON c.teacher_id = t.user_id
+    LEFT JOIN enrollments e ON e.course_id = c.course_id
+    LEFT JOIN certificates cert ON cert.enrollment_id = e.enrollment_id
+    WHERE t.role = 'teacher'
+    GROUP BY t.user_id
+),
+CourseRatings AS (
+    SELECT 
+        c.teacher_id,
+        ROUND(AVG(lp.assignment_grade), 2) AS avg_course_grade,
+        ROUND(AVG(ta.score), 2) AS avg_test_score,
+        COUNT(DISTINCT ta.attempt_id) FILTER (WHERE ta.status = 'passed') AS passed_tests,
+        COUNT(DISTINCT ta.attempt_id) AS total_tests
+    FROM courses c
+    LEFT JOIN modules m ON m.course_id = c.course_id
+    LEFT JOIN lessons l ON l.module_id = m.module_id
+    LEFT JOIN lesson_progress lp ON lp.lesson_id = l.lesson_id
+    LEFT JOIN tests ts ON ts.lesson_id = l.lesson_id
+    LEFT JOIN test_attempts ta ON ta.test_id = ts.test_id
+    GROUP BY c.teacher_id
+)
+SELECT 
+    ts.teacher_name as "Преподаватель",
+    ts.total_courses as "Количество разработанных курсов",
+    ts.published_courses "Количество активных курсов",
+    ts.total_enrollments,
+    ts.unique_students as "Количество учеников",
+    ts.certificates_issued as "Количество выданных сертификатов",
+    ROUND(ts.certificates_issued * 100.0 / NULLIF(ts.total_enrollments, 0), 2) AS "Рейтинг преподавателя",
+    cr.avg_course_grade as "Среднее прохождение учеником",
+    cr.avg_test_score as "Среднее прохождение тестов",
+    CASE 
+        WHEN ts.certificates_issued >= 10 AND cr.avg_course_grade >= 80 THEN 'Эксперт'
+        WHEN ts.certificates_issued >= 8 THEN 'Опытный'
+        WHEN ts.certificates_issued >= 5 THEN 'Начинающий'
+        ELSE 'Новый'
+    END AS "Уровень преподавателя"
+FROM TeacherStats ts
+LEFT JOIN CourseRatings cr ON cr.teacher_id = ts.teacher_id
+ORDER BY  ts.total_enrollments DESC;
+ * 
+ * */
+/*
+
+4 -  анализ сложности курсов для студентов
+SELECT 
+    c.title AS "название курсов",
+    COUNT(DISTINCT m.module_id) AS "количество модулей",
+    COUNT(DISTINCT l.lesson_id) AS "количество уроков",
+    COUNT(DISTINCT t.test_id) AS "количество тестов",
+    CASE 
+        WHEN COUNT(DISTINCT m.module_id) >= 3 
+             AND COUNT(DISTINCT l.lesson_id) >= 6
+             AND COUNT(DISTINCT t.test_id) >= 5 
+            THEN 'Для Midle'
+
+        WHEN COUNT(DISTINCT m.module_id) = 2 
+             AND COUNT(DISTINCT l.lesson_id) between 3 and 5
+             AND COUNT(DISTINCT t.test_id) between 3 and 4
+            THEN 'Для Junior'
+        ELSE 'Начальный уровень'
+
+    END AS "Сложность курса"
+FROM project.courses c
+LEFT JOIN project.modules m ON c.course_id = m.course_id
+LEFT JOIN project.lessons l ON m.module_id = l.module_id
+LEFT JOIN project.tests t ON l.lesson_id = t.lesson_id
+WHERE c.status = 'published' and m.module_id >0 
+GROUP BY c.course_id, c.title
+*/
+
+/* 5- популярность курсов для студентов
+SELECT 
+    c.title AS course_name,
+    COUNT(DISTINCT cert.user_id) AS выпускники,
+    COUNT(DISTINCT e.user_id) AS всего_записались,
+    ROUND(
+        COUNT(DISTINCT cert.user_id)::DECIMAL / 
+        NULLIF(COUNT(DISTINCT e.user_id), 0) * 100, 0) AS процент_завершения,
+    CASE 
+        WHEN COUNT(DISTINCT cert.user_id) >= 5  THEN 'Проверенный курс'
+        WHEN COUNT(DISTINCT CASE 
+                WHEN e.status = 'active' AND cert.certificate_id IS NULL 
+                THEN e.user_id END) >= 2
+            THEN 'Популярный сейчас' ELSE 'Недавний запуск'
+    END AS статус
+FROM project.courses c
+LEFT JOIN project.enrollments e ON c.course_id = e.course_id
+LEFT JOIN project.certificates cert ON c.course_id = cert.course_id  AND e.user_id = cert.user_id
+WHERE c.status = 'published'
+GROUP BY c.course_id, c.title
+HAVING COUNT(DISTINCT e.user_id) > 0  
+ORDER BY  выпускники DESC
+LIMIT 7; 
+  
+  * */
+
+/* 6- занятость преподавателей
+  WITH teacher_load AS (
+    SELECT 
+      u.user_id,
+      CONCAT(u.first_name, ' ', u.last_name) AS teacher_name,
+      COUNT(DISTINCT CASE 
+            WHEN e.status = 'active' 
+            THEN e.user_id 
+        END) AS active_students
+    FROM project.users u
+    LEFT JOIN project.courses c ON u.user_id = c.teacher_id
+    LEFT JOIN project.enrollments e ON c.course_id = e.course_id
+    WHERE u.role = 'teacher'
+    GROUP BY u.user_id, u.first_name, u.last_name
+)
+SELECT 
+    teacher_name as "Преподаватель",
+    active_students as "Количество активных учеников",
+    CASE 
+        WHEN active_students >= 10 THEN
+            'Не доступен для новых курсов (' || active_students || ' активных учеников)'
+        WHEN active_students BETWEEN 7 AND 9 THEN
+            'Можно дать 1 новый курс (' || active_students || ' активных учеников)'
+        ELSE
+            'Можно дать 2 новых курса (' || active_students || ' активных учеников)'
+    END AS "Доступность преподавателя"
+FROM teacher_load
+ORDER BY 
+    active_students ASC,   teacher_name;
+
+ * */
+
+
