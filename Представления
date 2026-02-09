@@ -1,0 +1,101 @@
+/* -- представление для отчета о студентах
+ CREATE OR REPLACE VIEW project.student_course_progress AS
+WITH CourseProgress AS (
+    SELECT 
+        e.enrollment_id,
+        u.user_id,
+        u.first_name || ' ' || u.last_name AS student_name,
+        c.course_id,
+        c.title AS course_title,
+        t.first_name || ' ' || t.last_name AS teacher_name,
+        COUNT(DISTINCT l.lesson_id) AS total_lessons,
+        COUNT(DISTINCT lp.lesson_id) FILTER (WHERE lp.status = 'completed') AS completed_lessons,
+        AVG(ta.score) FILTER (WHERE ta.status = 'passed') AS avg_test_score
+    FROM project.enrollments e
+    JOIN project.users u ON u.user_id = e.user_id
+    JOIN project.courses c ON c.course_id = e.course_id
+    JOIN project.users t ON t.user_id = c.teacher_id
+    LEFT JOIN project.modules m ON m.course_id = c.course_id
+    LEFT JOIN project.lessons l ON l.module_id = m.module_id
+    LEFT JOIN project.lesson_progress lp ON lp.enrollment_id = e.enrollment_id AND lp.lesson_id = l.lesson_id
+    LEFT JOIN project.tests ts ON ts.lesson_id = l.lesson_id
+    LEFT JOIN project.test_attempts ta ON ta.enrollment_id = e.enrollment_id AND ta.test_id = ts.test_id
+    WHERE e.status != 'dropped'
+    GROUP BY e.enrollment_id, u.user_id, c.course_id, t.user_id
+)
+SELECT 
+    student_name AS "Фамилия и имя студента",
+    course_title AS "Название курса",
+    teacher_name AS "Фамилия и имя преподавателя",
+    total_lessons AS "Общее количество уроков",
+    completed_lessons AS "Количество завершенных уроков",
+    CASE 
+        WHEN completed_lessons = total_lessons AND total_lessons > 0 THEN 'Завершен'
+        WHEN completed_lessons > 0 THEN 'В процессе'
+        ELSE 'Не начат'
+    END AS "Прогресс обучения"
+FROM CourseProgress;
+  */
+
+/*
+ --2 представление - оценка сложности курсов
+ CREATE OR REPLACE VIEW project.course_difficulty_analysis AS
+SELECT 
+    c.title AS "Название курса",
+    COUNT(DISTINCT m.module_id) AS  "количество модулей",
+    COUNT(DISTINCT l.lesson_id) AS "количество уроков",
+    COUNT(DISTINCT t.test_id) AS "количество тестов",
+    CASE 
+        WHEN COUNT(DISTINCT m.module_id) >= 3 
+             AND COUNT(DISTINCT l.lesson_id) >= 6
+             AND COUNT(DISTINCT t.test_id) >= 5 
+            THEN 'Для Middle'
+        WHEN COUNT(DISTINCT m.module_id) = 2 
+             AND COUNT(DISTINCT l.lesson_id) BETWEEN 3 AND 5
+             AND COUNT(DISTINCT t.test_id) BETWEEN 3 AND 4
+            THEN 'Для Junior'
+        ELSE 'Начальный уровень'
+    END AS difficulty_category
+
+FROM project.courses c
+LEFT JOIN project.modules m ON c.course_id = m.course_id
+LEFT JOIN project.lessons l ON m.module_id = l.module_id
+LEFT JOIN project.tests t ON l.lesson_id = t.lesson_id
+
+WHERE c.status = 'published'  AND m.module_id IS NOT NULL  
+GROUP BY c.course_id, c.title, c.status;
+ 
+ **/
+
+/*--представление 3. Нагрузка на препродавателей
+
+ * CREATE OR REPLACE VIEW project.teacher_availability_view AS
+WITH teacher_load AS (
+    SELECT 
+        u.user_id,
+        CONCAT(u.first_name, ' ', u.last_name) AS teacher_name,
+        COUNT(DISTINCT CASE 
+            WHEN e.status = 'active' 
+            THEN e.user_id 
+        END) AS active_students
+    FROM project.users u
+    LEFT JOIN project.courses c ON u.user_id = c.teacher_id
+    LEFT JOIN project.enrollments e ON c.course_id = e.course_id
+    WHERE u.role = 'teacher'
+    GROUP BY u.user_id, u.first_name, u.last_name
+)
+
+SELECT 
+    teacher_name as "Преподаватель",
+    active_students as "Количество активных учеников",
+    CASE 
+        WHEN active_students >= 10 THEN
+            'Не доступен для новых курсов (' || active_students || ' активных учеников)'
+        WHEN active_students BETWEEN 7 AND 9 THEN
+            'Можно дать 1 новый курс (' || active_students || ' активных учеников)'
+        ELSE
+            'Можно дать 2 новых курса (' || active_students || ' активных учеников)'
+    END AS "Доступность преподавателя"
+FROM teacher_load
+ORDER BY  active_students ASC, teacher_name;*/
+
