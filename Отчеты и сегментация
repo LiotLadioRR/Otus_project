@@ -1,0 +1,95 @@
+-- отчет успеваемости студентов
+
+/**
+ * 
+ * 
+ * 
+ * SELECT 
+    u.first_name || ' ' || u.last_name AS "Фамилия и имя студента",
+    c.title AS "Название курса",
+    COUNT(DISTINCT lp.lesson_id) AS "Пройденные уроки",
+    COUNT(DISTINCT l.lesson_id) AS "Всего уроков курса",
+    ROUND(COUNT(DISTINCT lp.lesson_id) * 100.0 / GREATEST(COUNT(DISTINCT l.lesson_id), 1), 2) AS "Процент прогресса",
+    cert.certificate_number as "Номер сертификата",
+    cert.issued_at as "Дата выдачи"
+FROM users u
+JOIN enrollments e ON u.user_id = e.user_id
+JOIN courses c ON c.course_id = e.course_id
+LEFT JOIN modules m ON m.course_id = c.course_id
+LEFT JOIN lessons l ON l.module_id = m.module_id
+LEFT JOIN lesson_progress lp ON lp.enrollment_id = e.enrollment_id AND lp.lesson_id = l.lesson_id AND lp.status = 'completed'
+LEFT JOIN certificates cert ON cert.enrollment_id = e.enrollment_id
+GROUP BY u.user_id, c.course_id, cert.certificate_number, cert.issued_at
+ORDER BY c.title;
+ */*/
+ 
+ -- отчет по курсам
+ /*
+WITH CourseSummary AS (
+    SELECT 
+        c.title AS "Курс",
+        u.first_name || ' ' || u.last_name AS "Преподаватель",
+        COUNT(DISTINCT e.user_id) AS "Студентов",
+        COUNT(DISTINCT e.user_id) FILTER (WHERE e.status = 'completed') AS "Завершили",
+        COUNT(DISTINCT m.module_id) AS "Модулей",
+        COUNT(DISTINCT l.lesson_id) AS "Уроков",
+        COUNT(DISTINCT cert.certificate_id) AS "Сертификатов"
+    FROM project.courses c
+    JOIN project.users u ON u.user_id = c.teacher_id
+    LEFT JOIN project.enrollments e ON e.course_id = c.course_id
+    LEFT JOIN project.modules m ON m.course_id = c.course_id
+    LEFT JOIN project.lessons l ON l.module_id = m.module_id
+    LEFT JOIN project.certificates cert ON cert.course_id = c.course_id
+    WHERE c.status = 'published'
+    GROUP BY c.course_id, u.user_id
+)
+SELECT 
+    "Курс",
+    "Преподаватель",
+    "Студентов",
+    CASE 
+        WHEN "Студентов" > 0 
+        THEN ROUND("Завершили" * 100.0 / "Студентов", 1) || '%'
+        ELSE '0%'
+    END AS "Завершили, %",
+    "Модулей",
+    "Уроков",
+    "Сертификатов"
+FROM CourseSummary
+ORDER BY "Студентов" DESC;*/
+ 
+ 
+ 
+---сегментация курсов по эффективности
+
+ /*
+ 
+SELECT 
+    c.title AS "Название курса",
+    COUNT(DISTINCT e.user_id) AS "Всего студентов",
+    COUNT(DISTINCT e.user_id) FILTER (WHERE e.status = 'completed') AS "Выпускников",
+    
+    -- Сегментация по эффективности
+    CASE 
+        WHEN COUNT(DISTINCT e.user_id) FILTER (WHERE e.status = 'completed') >= 5 
+             AND COUNT(DISTINCT e.user_id) > 0
+        THEN 'Высокая эффективность'
+        
+        WHEN COUNT(DISTINCT e.user_id) FILTER (WHERE e.status = 'completed') >= 3 
+             AND COUNT(DISTINCT e.user_id) > 0
+        THEN 'Средняя эффективность'
+        
+        WHEN COUNT(DISTINCT e.user_id) FILTER (WHERE e.status = 'completed') = 1 
+             AND COUNT(DISTINCT e.user_id) > 0
+        THEN 'Низкая эффективность'
+        
+        ELSE 'Нет выпускников'
+    END AS "Эффективность курса"
+
+FROM project.courses c
+LEFT JOIN project.enrollments e ON e.course_id = c.course_id
+WHERE c.status = 'published'
+GROUP BY c.course_id, c.title
+ORDER BY "Выпускников" DESC;
+ 
+ */
