@@ -1,0 +1,171 @@
+-- таблица для фиксации выдачи документов об окончании курса
+
+CREATE TABLE project.certificates (
+	certificate_id serial4 NOT NULL,
+	enrollment_id int4 NOT NULL,
+	user_id int4 NOT NULL,
+	course_id int4 NOT NULL,
+	certificate_number varchar(100) NOT NULL,
+	document_url varchar(500) NOT NULL,
+	issued_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	issued_by int4 NULL,
+	expires_at date NULL,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT certificates_certificate_number_key UNIQUE (certificate_number),
+	CONSTRAINT certificates_enrollment_id_key UNIQUE (enrollment_id),
+	CONSTRAINT certificates_pkey PRIMARY KEY (certificate_id),
+	CONSTRAINT fk_certificates_course FOREIGN KEY (course_id) REFERENCES project.courses(course_id),
+	CONSTRAINT fk_certificates_enrollment FOREIGN KEY (enrollment_id) REFERENCES project.enrollments(enrollment_id),
+	CONSTRAINT fk_certificates_issued_by FOREIGN KEY (issued_by) REFERENCES project.users(user_id),
+	CONSTRAINT fk_certificates_user FOREIGN KEY (user_id) REFERENCES project.users(user_id)
+);
+-- курсы
+CREATE TABLE project.courses (
+	course_id serial4 NOT NULL,
+	title varchar(255) NOT NULL,
+	description text NULL,
+	teacher_id int4 NOT NULL,
+	status varchar(20) DEFAULT 'draft'::character varying NULL,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	published_at timestamp NULL,
+	updated_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT courses_pkey PRIMARY KEY (course_id),
+	CONSTRAINT courses_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'published'::character varying, 'archived'::character varying])::text[]))),
+	CONSTRAINT fk_courses_teacher FOREIGN KEY (teacher_id) REFERENCES project.users(user_id)
+);
+
+-- записи на курс
+
+CREATE TABLE project.enrollments (
+	enrollment_id serial4 NOT NULL,
+	user_id int4 NOT NULL,
+	course_id int4 NOT NULL,
+	completed_at timestamp NULL,
+	status varchar(20) DEFAULT 'active'::character varying NULL,
+	CONSTRAINT enrollments_pkey PRIMARY KEY (enrollment_id),
+	CONSTRAINT enrollments_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'completed'::character varying, 'dropped'::character varying])::text[]))),
+	CONSTRAINT enrollments_user_id_course_id_key UNIQUE (user_id, course_id),
+	CONSTRAINT fk_enrollments_course FOREIGN KEY (course_id) REFERENCES project.courses(course_id),
+	CONSTRAINT fk_enrollments_user FOREIGN KEY (user_id) REFERENCES project.users(user_id)
+);
+
+-- материалы уроков
+CREATE TABLE project.lesson_materials (
+	material_id serial4 NOT NULL,
+	lesson_id int4 NOT NULL,
+	title varchar(255) NOT NULL,
+	content_url varchar(500) NOT NULL,
+	content_type varchar(50) NULL,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT lesson_materials_pkey PRIMARY KEY (material_id),
+	CONSTRAINT fk_lesson_materials_lesson FOREIGN KEY (lesson_id) REFERENCES project.lessons(lesson_id)
+);
+
+
+-- прогресс по обучению
+CREATE TABLE project.lesson_progress (
+	progress_id serial4 NOT NULL,
+	enrollment_id int4 NOT NULL,
+	lesson_id int4 NOT NULL,
+	status varchar(20) DEFAULT 'not_started'::character varying NULL,
+	assignment_grade numeric(5, 2) NULL,
+	assignment_feedback text NULL,
+	assignment_submitted_at timestamp NULL,
+	started_at timestamp NULL,
+	completed_at timestamp NULL,
+	CONSTRAINT lesson_progress_enrollment_id_lesson_id_key UNIQUE (enrollment_id, lesson_id),
+	CONSTRAINT lesson_progress_pkey PRIMARY KEY (progress_id),
+	CONSTRAINT lesson_progress_status_check CHECK (((status)::text = ANY ((ARRAY['not_started'::character varying, 'in_progress'::character varying, 'completed'::character varying])::text[]))),
+	CONSTRAINT fk_lesson_progress_enrollment FOREIGN KEY (enrollment_id) REFERENCES project.enrollments(enrollment_id),
+	CONSTRAINT fk_lesson_progress_lesson FOREIGN KEY (lesson_id) REFERENCES project.lessons(lesson_id)
+);
+-- уроки модулей курсов
+CREATE TABLE project.lessons (
+	lesson_id serial4 NOT NULL,
+	module_id int4 NOT NULL,
+	title varchar(255) NOT NULL,
+	has_homework bool NULL,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT lessons_pkey PRIMARY KEY (lesson_id),
+	CONSTRAINT fk_lessons_module FOREIGN KEY (module_id) REFERENCES project.modules(module_id)
+);
+
+-- модули курсов
+CREATE TABLE project.modules (
+	module_id serial4 NOT NULL,
+	course_id int4 NOT NULL,
+	title varchar(255) NOT NULL,
+	description text NULL,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT modules_pkey PRIMARY KEY (module_id),
+	CONSTRAINT fk_modules_course FOREIGN KEY (course_id) REFERENCES project.courses(course_id)
+);
+-- ответы на тесты
+CREATE TABLE project.question_answers (
+	answer_id serial4 NOT NULL,
+	question_id int4 NOT NULL,
+	answer_text text NOT NULL,
+	is_correct bool DEFAULT false NULL,
+	CONSTRAINT question_answers_pkey PRIMARY KEY (answer_id),
+	CONSTRAINT fk_question_answers_question FOREIGN KEY (question_id) REFERENCES project.test_questions(question_id)
+);
+
+-- попытки пройти тесты
+CREATE TABLE project.test_attempts (
+	attempt_id serial4 NOT NULL,
+	enrollment_id int4 NOT NULL,
+	test_id int4 NOT NULL,
+	attempt_number int4 DEFAULT 1 NOT NULL,
+	score numeric(5, 2) NULL,
+	status varchar(20) DEFAULT 'in_progress'::character varying NULL,
+	started_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	finished_at timestamp NULL,
+	CONSTRAINT test_attempts_enrollment_id_test_id_attempt_number_key UNIQUE (enrollment_id, test_id, attempt_number),
+	CONSTRAINT test_attempts_pkey PRIMARY KEY (attempt_id),
+	CONSTRAINT test_attempts_status_check CHECK (((status)::text = ANY ((ARRAY['in_progress'::character varying, 'passed'::character varying, 'failed'::character varying])::text[]))),
+	CONSTRAINT fk_test_attempts_enrollment FOREIGN KEY (enrollment_id) REFERENCES project.enrollments(enrollment_id),
+	CONSTRAINT fk_test_attempts_test FOREIGN KEY (test_id) REFERENCES project.tests(test_id)
+);
+-- вопросы по тестам
+CREATE TABLE project.test_questions (
+	question_id serial4 NOT NULL,
+	test_id int4 NOT NULL,
+	question_text text NOT NULL,
+	question_type varchar(20) DEFAULT 'single_choice'::character varying NULL,
+	points int4 DEFAULT 1 NULL,
+	CONSTRAINT test_questions_pkey PRIMARY KEY (question_id),
+	CONSTRAINT test_questions_question_type_check CHECK (((question_type)::text = ANY ((ARRAY['single_choice'::character varying, 'multiple_choice'::character varying])::text[]))),
+	CONSTRAINT fk_test_questions_test FOREIGN KEY (test_id) REFERENCES project.tests(test_id)
+);
+-- сами тесты
+CREATE TABLE project.tests (
+	test_id serial4 NOT NULL,
+	lesson_id int4 NOT NULL,
+	title varchar(255) NOT NULL,
+	description text NULL,
+	passing_score int4 DEFAULT 70 NOT NULL,
+	max_attempts int4 DEFAULT 1 NOT NULL,
+	time_limit_minutes int4 NULL,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT tests_lesson_id_key UNIQUE (lesson_id),
+	CONSTRAINT tests_pkey PRIMARY KEY (test_id),
+	CONSTRAINT fk_tests_lesson FOREIGN KEY (lesson_id) REFERENCES project.lessons(lesson_id)
+);
+-- пользователи курсов
+CREATE TABLE project.users (
+	user_id serial4 NOT NULL,
+	email varchar(255) NOT NULL,
+	password_hash varchar(255) NOT NULL,
+	first_name varchar(100) NULL,
+	last_name varchar(100) NULL,
+	"role" varchar(20) DEFAULT 'student'::character varying NOT NULL,
+	created_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	updated_at timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT users_email_key UNIQUE (email),
+	CONSTRAINT users_pkey PRIMARY KEY (user_id),
+	CONSTRAINT users_role_check CHECK (((role)::text = ANY ((ARRAY['student'::character varying, 'teacher'::character varying, 'admin'::character varying])::text[])))
+	
+	
+CREATE INDEX idx_enrollments_user_id ON enrollments(user_id);
+
+CREATE INDEX idx_enrollments_course_id ON enrollments(course_id);
