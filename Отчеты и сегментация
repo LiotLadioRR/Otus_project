@@ -33,13 +33,15 @@ WITH CourseSummary AS (
         COUNT(DISTINCT e.user_id) FILTER (WHERE e.status = 'completed') AS "Завершили",
         COUNT(DISTINCT m.module_id) AS "Модулей",
         COUNT(DISTINCT l.lesson_id) AS "Уроков",
+        -- Исправлено: связываем сертификаты через enrollment_id, а не course_id
         COUNT(DISTINCT cert.certificate_id) AS "Сертификатов"
     FROM project.courses c
     JOIN project.users u ON u.user_id = c.teacher_id
     LEFT JOIN project.enrollments e ON e.course_id = c.course_id
     LEFT JOIN project.modules m ON m.course_id = c.course_id
     LEFT JOIN project.lessons l ON l.module_id = m.module_id
-    LEFT JOIN project.certificates cert ON cert.course_id = c.course_id
+    -- Правильная связь: сертификат → запись на курс → курс
+    LEFT JOIN project.certificates cert ON cert.enrollment_id = e.enrollment_id
     WHERE c.status = 'published'
     GROUP BY c.course_id, u.user_id
 )
@@ -54,9 +56,15 @@ SELECT
     END AS "Завершили, %",
     "Модулей",
     "Уроков",
-    "Сертификатов"
+    "Сертификатов",
+    -- Дополнительная метрика: процент сертифицированных среди завершивших
+    CASE 
+        WHEN "Завершили" > 0 
+        THEN ROUND("Сертификатов" * 100.0 / "Завершили", 1) || '%'
+        ELSE '0%'
+    END AS "Сертифицировано, %"
 FROM CourseSummary
-ORDER BY "Студентов" DESC;*/
+ORDER BY "Студентов" DESC;
  
  
  
